@@ -5,6 +5,7 @@ import { registerFormType } from "@/components/common/register-form";
 import { loginFormType } from "@/components/forms/login-form";
 import { getUserByEmail } from "@/data";
 import PrismaDb from "@/lib/db";
+import { generateVerificationToken } from "@/lib/tokens";
 import { defaultLoginRedirect } from "@/routes";
 import { loginFormSchema, registerFormSchema } from "@/schemas";
 import bcrypt from "bcryptjs";
@@ -18,6 +19,20 @@ export const login = async (values: loginFormType) => {
   }
 
   const { email, password } = validatedFields.data;
+
+  const existingUser = await getUserByEmail(email);
+
+  if (!existingUser || !existingUser.email || !existingUser.password) {
+    return { error: "Invalid Credentials" };
+  }
+
+  if (!existingUser.emailVerified) {
+    const verificationToken = await generateVerificationToken(
+      existingUser.email
+    );
+
+    return { success: "Confirmation email sent" };
+  }
 
   try {
     await signIn("credentials", {
@@ -60,5 +75,9 @@ export const register = async (values: registerFormType) => {
     },
   });
 
-  return { success: "User Created" };
+  const verificationToken = await generateVerificationToken(
+    validatedFields.data.email
+  );
+
+  return { success: "Confirmation Email sent" };
 };
