@@ -4,7 +4,9 @@ import { signIn } from "@/auth";
 import { registerFormType } from "@/components/common/register-form";
 import { loginFormType } from "@/components/forms/login-form";
 import { getUserByEmail } from "@/data";
+import { getVerificationTokenByToken } from "@/data/verification-token";
 import PrismaDb from "@/lib/db";
+import { sendVerificationEmail } from "@/lib/mail";
 import { generateVerificationToken } from "@/lib/tokens";
 import { defaultLoginRedirect } from "@/routes";
 import { loginFormSchema, registerFormSchema } from "@/schemas";
@@ -29,6 +31,11 @@ export const login = async (values: loginFormType) => {
   if (!existingUser.emailVerified) {
     const verificationToken = await generateVerificationToken(
       existingUser.email
+    );
+
+    await sendVerificationEmail(
+      verificationToken.email,
+      verificationToken.token
     );
 
     return { success: "Confirmation email sent" };
@@ -79,5 +86,43 @@ export const register = async (values: registerFormType) => {
     validatedFields.data.email
   );
 
+  await sendVerificationEmail(verificationToken.email, verificationToken.token);
+
   return { success: "Confirmation Email sent" };
+};
+
+export const newVerification = async (token: string) => {
+  const existingToken = await getVerificationTokenByToken(token);
+
+  if (!existingToken) {
+    return { error: "Invalid Token" };
+  }
+
+  const hasExpired = new Date(existingToken.expires) < new Date();
+
+  if (hasExpired) {
+    return { error: "Token has expired" };
+  }
+  const existingUser = await getUserByEmail(existingToken.email);
+  if (!existingUser) {
+    return { error: "Invalid User" };
+  }
+
+  await PrismaDb.user.update({
+    where: {
+      id: existingUser.id,
+    },
+    data: {
+      emailVerified: new Date(),
+      email: existingToken.email,
+    },
+  });
+
+  await PrismaDb.verificationToken.delete({
+    where: {
+      id: existingToken.id,
+    },
+  });
+
+  return { success: "Email Verified" };
 };
